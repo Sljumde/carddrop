@@ -1,0 +1,385 @@
+.main {
+  min-height: 100dvh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px 48px;
+}
+
+.container {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Header */
+.header {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.logoIcon {
+  font-size: 28px;
+  color: var(--accent-light);
+  line-height: 1;
+}
+
+.logoText {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+
+.tagline {
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* Card shell */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Dropzone */
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  overflow: hidden;
+  position: relative;
+}
+
+.dropzone:hover {
+  border-color: var(--accent);
+  background: rgba(108, 99, 255, 0.05);
+}
+
+.dropContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.dropIcon {
+  font-size: 40px;
+}
+
+.dropTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dropSub {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.preview {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  max-height: 240px;
+  border-radius: 6px;
+}
+
+.previewSmall {
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 8px;
+  opacity: 0.7;
+}
+
+.thumbNail {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+/* Buttons */
+.btnRow {
+  display: flex;
+  gap: 10px;
+}
+
+.btnPrimary {
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.btnPrimary:hover {
+  background: var(--accent-light);
+}
+
+.btnPrimary:active {
+  transform: scale(0.98);
+}
+
+.btnSecondary {
+  flex: 1;
+  padding: 12px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.btnSecondary:hover {
+  border-color: var(--accent);
+  background: rgba(108, 99, 255, 0.08);
+}
+
+.btnGhost {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.btnGhost:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+/* Scanning state */
+.scanningState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.scanningText {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.scanningSubtext {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Review */
+.reviewHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.reviewMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.badge {
+  font-size: 12px;
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+
+.reviewHint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Fields */
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.fieldInput {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 15px;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+
+.fieldInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fieldInput::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.fieldTextarea {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+  resize: vertical;
+  transition: border-color 0.2s;
+  width: 100%;
+  line-height: 1.5;
+}
+
+.fieldTextarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.fieldTextarea::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+/* Done state */
+.doneState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+}
+
+.doneIcon {
+  width: 56px;
+  height: 56px;
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.doneTitle {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.doneName {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.doneCompany {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+/* Error state */
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+}
+
+.errorIcon {
+  width: 56px;
+  height: 56px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.errorTitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.errorMsg {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  max-width: 300px;
+}
