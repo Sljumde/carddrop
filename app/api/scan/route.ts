@@ -7,15 +7,20 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageBase64, mimeType } = await req.json()
+    const { imageBase64, mimeType, images } = await req.json()
+    const scanImages = Array.isArray(images) && images.length > 0
+      ? images
+      : [{ imageBase64, mimeType }]
 
-    if (!imageBase64) {
+    const validImages = scanImages.filter((image: any) => image?.imageBase64)
+
+    if (validImages.length === 0) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
     }
 
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
 
-    const prompt = `You are a business card scanner. Extract the following fields from this business card image and return ONLY a valid JSON object with no extra text, no markdown, no explanation.
+    const prompt = `You are a business card scanner. You may receive one or two images for the same card: front side first, optional back side second. Extract the following fields by combining details from all provided images and return ONLY a valid JSON object with no extra text, no markdown, no explanation.
 
 Fields to extract:
 - name (full name of the person)
@@ -34,7 +39,12 @@ Return format (JSON only, nothing else):
       try {
         const result = await model.generateContent([
           prompt,
-          { inlineData: { data: imageBase64, mimeType: mimeType || 'image/jpeg' } },
+          ...validImages.map((image: any) => ({
+            inlineData: {
+              data: image.imageBase64,
+              mimeType: image.mimeType || 'image/jpeg',
+            },
+          })),
         ])
 
         const text = result.response.text().trim()

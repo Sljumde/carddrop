@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import styles from './page.module.css'
 
 type CardData = {
@@ -13,35 +13,97 @@ type CardData = {
 }
 
 type Stage = 'capture' | 'scanning' | 'review' | 'submitting' | 'done' | 'error'
+type CardSide = 'front' | 'back'
 
 export default function Home() {
   const [stage, setStage] = useState<Stage>('capture')
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageBase64, setImageBase64] = useState<string>('')
   const [imageMime, setImageMime] = useState<string>('image/jpeg')
+  const [backImagePreview, setBackImagePreview] = useState<string | null>(null)
+  const [backImageBase64, setBackImageBase64] = useState<string>('')
+  const [backImageMime, setBackImageMime] = useState<string>('image/jpeg')
+  const [activeSide, setActiveSide] = useState<CardSide>('front')
   const [cardData, setCardData] = useState<CardData>({
     name: '', email: '', phone: '', company: '', designation: '', website: ''
   })
   const [remarks, setRemarks] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [scanTime, setScanTime] = useState(0)
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [cameraError, setCameraError] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
+    setIsCameraOpen(false)
+  }, [])
+
+  useEffect(() => {
+    return () => stopCamera()
+  }, [stopCamera])
+
+  useEffect(() => {
+    if (!isCameraOpen || !videoRef.current || !streamRef.current) return
+
+    videoRef.current.srcObject = streamRef.current
+    videoRef.current.play().catch(() => {
+      setCameraError('Camera opened, but the preview could not start. Please try again.')
+    })
+  }, [isCameraOpen])
+
+  const setImageFromDataUrl = useCallback((dataUrl: string, mime = 'image/jpeg', side: CardSide = activeSide) => {
+    const base64 = dataUrl.split(',')[1] || ''
+
+    if (side === 'back') {
+      setBackImageMime(mime)
+      setBackImagePreview(dataUrl)
+      setBackImageBase64(base64)
+      return
+    }
+
+    setImageMime(mime)
+    setImagePreview(dataUrl)
+    setImageBase64(base64)
+  }, [activeSide])
+
+  const activeImagePreview = activeSide === 'back' ? backImagePreview : imagePreview
+  const hasAnyImage = Boolean(imageBase64 || backImageBase64)
+
+  const clearActiveSideImage = useCallback(() => {
+    if (activeSide === 'back') {
+      setBackImagePreview(null)
+      setBackImageBase64('')
+      return
+    }
+
+    setImagePreview(null)
+    setImageBase64('')
+  }, [activeSide])
+
+  const handleSideChange = useCallback((side: CardSide) => {
+    stopCamera()
+    setCameraError('')
+    setActiveSide(side)
+  }, [stopCamera])
 
   const handleImage = useCallback((file: File) => {
     const mime = file.type || 'image/jpeg'
-    setImageMime(mime)
     const reader = new FileReader()
     reader.onload = (e) => {
       const result = e.target?.result as string
-      setImagePreview(result)
-      // Strip data URL prefix to get pure base64
-      const base64 = result.split(',')[1]
-      setImageBase64(base64)
+      setImageFromDataUrl(result, mime)
     }
     reader.readAsDataURL(file)
-  }, [])
+    stopCamera()
+  }, [setImageFromDataUrl, stopCamera])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -54,15 +116,73 @@ export default function Home() {
     if (file && file.type.startsWith('image/')) handleImage(file)
   }
 
+  const handleOpenGallery = () => {
+    stopCamera()
+    fileInputRef.current?.click()
+  }
+
+  const handleOpenCamera = async () => {
+    setCameraError('')
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      cameraInputRef.current?.click()
+      return
+    }
+
+    try {
+      stopCamera()
+      clearActiveSideImage()
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      })
+
+      streamRef.current = stream
+      setIsCameraOpen(true)
+    } catch (err: any) {
+      setCameraError(err?.message || 'Camera could not be opened. Please allow camera access and try again.')
+    }
+  }
+
+  const handleCapturePhoto = () => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || !video.videoWidth || !video.videoHeight) {
+      setCameraError('Camera is still loading. Please try again in a moment.')
+      return
+    }
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const context = canvas.getContext('2d')
+    if (!context) {
+      setCameraError('Could not capture from this camera.')
+      return
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height)
+    setImageFromDataUrl(canvas.toDataURL('image/jpeg', 0.92), 'image/jpeg')
+    stopCamera()
+  }
+
   const handleScan = async () => {
-    if (!imageBase64) return
+    if (!hasAnyImage) return
     setStage('scanning')
     const start = Date.now()
     try {
+      const images = [
+        imageBase64 ? { side: 'front', imageBase64, mimeType: imageMime } : null,
+        backImageBase64 ? { side: 'back', imageBase64: backImageBase64, mimeType: backImageMime } : null,
+      ].filter(Boolean)
+
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, mimeType: imageMime }),
+        body: JSON.stringify({ images }),
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error || 'Scan failed')
@@ -93,9 +213,13 @@ export default function Home() {
   }
 
   const handleReset = () => {
+    stopCamera()
     setStage('capture')
     setImagePreview(null)
     setImageBase64('')
+    setBackImagePreview(null)
+    setBackImageBase64('')
+    setActiveSide('front')
     setCardData({ name: '', email: '', phone: '', company: '', designation: '', website: '' })
     setRemarks('')
     setErrorMsg('')
@@ -114,27 +238,55 @@ export default function Home() {
         {/* Header */}
         <div className={styles.header}>
           <div className={styles.logo}>
-            <span className={styles.logoIcon}>⬡</span>
+            <span className={styles.logoIcon}>CD</span>
             <span className={styles.logoText}>CardDrop</span>
           </div>
-          <p className={styles.tagline}>Scan · Review · Save</p>
+          <p className={styles.tagline}>Scan / Review / Save</p>
         </div>
 
         {/* STAGE: CAPTURE */}
         {stage === 'capture' && (
           <div className={styles.card}>
+            <div className={styles.sideSelector} aria-label="Card side">
+              <button
+                className={`${styles.sideButton} ${activeSide === 'front' ? styles.sideButtonActive : ''}`}
+                onClick={() => handleSideChange('front')}
+                type="button"
+              >
+                Front
+                {imagePreview && <span className={styles.sideCheck}>Added</span>}
+              </button>
+              <button
+                className={`${styles.sideButton} ${activeSide === 'back' ? styles.sideButtonActive : ''}`}
+                onClick={() => handleSideChange('back')}
+                type="button"
+              >
+                Back
+                {backImagePreview && <span className={styles.sideCheck}>Added</span>}
+              </button>
+            </div>
+
             <div
               className={styles.dropzone}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={handleOpenGallery}
             >
-              {imagePreview ? (
-                <img src={imagePreview} alt="Card preview" className={styles.preview} />
+              {activeImagePreview ? (
+                <img src={activeImagePreview} alt={`${activeSide} side preview`} className={styles.preview} />
+              ) : isCameraOpen ? (
+                <div className={styles.cameraFrame} onClick={(e) => e.stopPropagation()}>
+                  <video
+                    ref={videoRef}
+                    className={styles.cameraVideo}
+                    autoPlay
+                    muted
+                    playsInline
+                  />
+                </div>
               ) : (
                 <div className={styles.dropContent}>
-                  <span className={styles.dropIcon}>🪪</span>
-                  <p className={styles.dropTitle}>Drop card here</p>
+                  <p className={styles.dropTitle}>{activeSide === 'back' ? 'Add back side' : 'Add front side'}</p>
                   <p className={styles.dropSub}>or tap to upload</p>
                 </div>
               )}
@@ -143,21 +295,36 @@ export default function Home() {
             <div className={styles.btnRow}>
               <button
                 className={styles.btnSecondary}
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={handleOpenCamera}
               >
-                📷 Camera
+                Camera
               </button>
               <button
                 className={styles.btnSecondary}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={handleOpenGallery}
               >
-                🖼️ Gallery
+                Gallery
               </button>
             </div>
 
-            {imagePreview && (
+            {cameraError && (
+              <p className={styles.cameraError}>{cameraError}</p>
+            )}
+
+            {isCameraOpen && (
+              <div className={styles.btnRow}>
+                <button className={styles.btnGhost} onClick={stopCamera}>
+                  Cancel
+                </button>
+                <button className={styles.btnPrimary} onClick={handleCapturePhoto}>
+                  Capture Photo
+                </button>
+              </div>
+            )}
+
+            {hasAnyImage && (
               <button className={styles.btnPrimary} onClick={handleScan}>
-                Scan Card →
+                Scan {backImageBase64 ? 'Both Sides' : 'Card'}
               </button>
             )}
 
@@ -176,6 +343,7 @@ export default function Home() {
               onChange={handleFileChange}
               style={{ display: 'none' }}
             />
+            <canvas ref={canvasRef} className={styles.hiddenCanvas} />
           </div>
         )}
 
@@ -184,6 +352,9 @@ export default function Home() {
           <div className={styles.card}>
             {imagePreview && (
               <img src={imagePreview} alt="Scanning" className={styles.previewSmall} />
+            )}
+            {backImagePreview && (
+              <img src={backImagePreview} alt="Scanning back side" className={styles.previewSmall} />
             )}
             <div className={styles.scanningState}>
               <div className={styles.spinner} />
@@ -198,9 +369,12 @@ export default function Home() {
           <div className={styles.card}>
             <div className={styles.reviewHeader}>
               <div className={styles.reviewMeta}>
-                <span className={styles.badge}>✓ Scanned in {scanTime}s</span>
+                <span className={styles.badge}>Scanned in {scanTime}s</span>
                 {imagePreview && (
                   <img src={imagePreview} alt="Card" className={styles.thumbNail} />
+                )}
+                {backImagePreview && (
+                  <img src={backImagePreview} alt="Back side" className={styles.thumbNail} />
                 )}
               </div>
               <p className={styles.reviewHint}>Review and edit before saving</p>
@@ -208,16 +382,16 @@ export default function Home() {
 
             <div className={styles.fields}>
               {([
-                { key: 'name', label: 'Name', icon: '👤', placeholder: 'Full name' },
-                { key: 'company', label: 'Company', icon: '🏢', placeholder: 'Company name' },
-                { key: 'designation', label: 'Designation', icon: '💼', placeholder: 'Job title' },
-                { key: 'email', label: 'Email', icon: '✉️', placeholder: 'email@example.com' },
-                { key: 'phone', label: 'Phone', icon: '📞', placeholder: '+91 98765 43210' },
-                { key: 'website', label: 'Website', icon: '🌐', placeholder: 'www.example.com' },
-              ] as const).map(({ key, label, icon, placeholder }) => (
+                { key: 'name', label: 'Name', placeholder: 'Full name' },
+                { key: 'company', label: 'Company', placeholder: 'Company name' },
+                { key: 'designation', label: 'Designation', placeholder: 'Job title' },
+                { key: 'email', label: 'Email', placeholder: 'email@example.com' },
+                { key: 'phone', label: 'Phone', placeholder: '+91 98765 43210' },
+                { key: 'website', label: 'Website', placeholder: 'www.example.com' },
+              ] as const).map(({ key, label, placeholder }) => (
                 <div key={key} className={styles.field}>
                   <label className={styles.fieldLabel}>
-                    <span>{icon}</span> {label}
+                    {label}
                   </label>
                   <input
                     className={styles.fieldInput}
@@ -230,7 +404,7 @@ export default function Home() {
 
               <div className={styles.field}>
                 <label className={styles.fieldLabel}>
-                  <span>📝</span> Remarks
+                  Remarks
                 </label>
                 <textarea
                   className={styles.fieldTextarea}
@@ -244,10 +418,10 @@ export default function Home() {
 
             <div className={styles.btnRow}>
               <button className={styles.btnGhost} onClick={handleReset}>
-                ← Rescan
+                Rescan
               </button>
               <button className={styles.btnPrimary} onClick={handleSubmit}>
-                Save to Sheet →
+                Save to Sheet
               </button>
             </div>
           </div>
@@ -268,7 +442,7 @@ export default function Home() {
         {stage === 'done' && (
           <div className={styles.card}>
             <div className={styles.doneState}>
-              <div className={styles.doneIcon}>✓</div>
+              <div className={styles.doneIcon}>OK</div>
               <p className={styles.doneTitle}>Saved!</p>
               <p className={styles.doneName}>{cardData.name || 'Contact'} added to sheet</p>
               {cardData.company && (
@@ -285,7 +459,7 @@ export default function Home() {
         {stage === 'error' && (
           <div className={styles.card}>
             <div className={styles.errorState}>
-              <div className={styles.errorIcon}>✕</div>
+              <div className={styles.errorIcon}>!</div>
               <p className={styles.errorTitle}>Something went wrong</p>
               <p className={styles.errorMsg}>{errorMsg}</p>
               <button className={styles.btnPrimary} onClick={handleReset}>
