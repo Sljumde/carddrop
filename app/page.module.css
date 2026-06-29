@@ -22,31 +22,26 @@
 
 .logo {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-.logoIcon {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--accent-light);
-  line-height: 1;
+.logoImage {
+  width: min(380px, 90vw);
+  height: auto;
+  display: block;
+  object-fit: contain;
 }
 
 .logoText {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 1.8px;
   color: var(--text);
+  text-align: center;
 }
 
 .tagline {
@@ -54,6 +49,25 @@
   color: var(--muted);
   letter-spacing: 2px;
   text-transform: uppercase;
+}
+
+.dashboardLink {
+  display: inline-flex;
+  margin-top: 10px;
+  color: var(--accent-light);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.dashboardLink:hover {
+  color: var(--text);
+}
+
+.scannedEmpty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
 }
 
 /* Card shell */

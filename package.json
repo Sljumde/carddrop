@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "load:test": "node scripts/load-test.js"
   },
   "dependencies": {
     "next": "14.2.5",

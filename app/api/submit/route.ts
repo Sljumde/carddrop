@@ -1,37 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { google } from 'googleapis'
+import { formatSheetTimestamp, getSheetsClient } from '@/lib/sheets'
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, phone, company, designation, website, remarks } = await req.json()
-
-    const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON!
-    // Fix common issue: literal newlines in private_key getting escaped wrong
-    const fixed = raw.replace(/\n/g, '\\n')
-    const credentials = JSON.parse(fixed)
-
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    })
-
-    const sheets = google.sheets({ version: 'v4', auth })
-
-    const timestamp = new Date().toLocaleString('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    const { name, email, phone, company, designation, website, remarks, submittedBy } = await req.json()
+    const sheets = getSheetsClient()
+    const timestamp = formatSheetTimestamp()
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-      range: 'Sheet1!A:H',
+      range: 'CARDS SCANNED!A:I',
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [[timestamp, name, email, phone, company, designation, website, remarks]],
+        values: [[timestamp, name, email, phone, company, designation, website, remarks, submittedBy]],
       },
     })
 

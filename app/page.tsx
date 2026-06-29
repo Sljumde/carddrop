@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useRef, useCallback, useEffect } from 'react'
 import styles from './page.module.css'
 
@@ -28,6 +29,8 @@ export default function Home() {
     name: '', email: '', phone: '', company: '', designation: '', website: ''
   })
   const [remarks, setRemarks] = useState('')
+  const [submittedBy, setSubmittedBy] = useState('')
+  const [submitterOptions, setSubmitterOptions] = useState<string[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [scanTime, setScanTime] = useState(0)
   const [isCameraOpen, setIsCameraOpen] = useState(false)
@@ -58,6 +61,15 @@ export default function Home() {
       setCameraError('Camera opened, but the preview could not start. Please try again.')
     })
   }, [isCameraOpen])
+
+  useEffect(() => {
+    fetch('/api/submitted-by')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setSubmitterOptions(json.names || [])
+      })
+      .catch(() => {})
+  }, [])
 
   const setImageFromDataUrl = useCallback((dataUrl: string, mime = 'image/jpeg', side: CardSide = activeSide) => {
     const base64 = dataUrl.split(',')[1] || ''
@@ -201,7 +213,7 @@ export default function Home() {
       const res = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...cardData, remarks }),
+        body: JSON.stringify({ ...cardData, remarks, submittedBy }),
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error || 'Submit failed')
@@ -222,6 +234,7 @@ export default function Home() {
     setActiveSide('front')
     setCardData({ name: '', email: '', phone: '', company: '', designation: '', website: '' })
     setRemarks('')
+    setSubmittedBy('')
     setErrorMsg('')
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
@@ -238,10 +251,13 @@ export default function Home() {
         {/* Header */}
         <div className={styles.header}>
           <div className={styles.logo}>
-            <span className={styles.logoIcon}>CD</span>
-            <span className={styles.logoText}>CardDrop</span>
+            <img src="/gauflora-logo.png" alt="Gauflora" className={styles.logoImage} />
+            <span className={styles.logoText}>AI CARD SCANNER</span>
           </div>
           <p className={styles.tagline}>Scan / Review / Save</p>
+          <Link href="/cards-scanned" className={styles.dashboardLink}>
+            View Cards Scanned
+          </Link>
         </div>
 
         {/* STAGE: CAPTURE */}
@@ -413,6 +429,24 @@ export default function Home() {
                   placeholder="Met at booth 12, interested in bulk gifting..."
                   rows={3}
                 />
+              </div>
+
+              <div className={styles.field}>
+                <label className={styles.fieldLabel}>
+                  Submitted By
+                </label>
+                <input
+                  className={styles.fieldInput}
+                  value={submittedBy}
+                  onChange={(e) => setSubmittedBy(e.target.value)}
+                  placeholder="Select or type name"
+                  list="submitted-by-options"
+                />
+                <datalist id="submitted-by-options">
+                  {submitterOptions.map(name => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </div>
             </div>
 
