@@ -3,7 +3,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'AI CARD SCANNER',
-  description: 'Brownwall proj to Scan business cards instantly',
+  description: 'a proj by Brownwall to Scan business cards instantly',
 }
 
 export const viewport: Viewport = {
