@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'AI CARD SCANNER by Brownwall',
-  description: 'Scan business cards instantly',
+  title: 'AI CARD SCANNER',
+  description: 'Brownwall proj to Scan business cards instantly',
 }
 
 export const viewport: Viewport = {
