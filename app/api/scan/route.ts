@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runAiFailover, type BusinessCardData } from '@/lib/aiProviders'
 import { uploadCardImageToDrive, type DriveUploadResult } from '@/lib/googleDrive'
 import { isUsableOcrText, runOcr, type ScanImageInput } from '@/lib/ocrFallback'
+import { ApiQuotaTracker, type ApiQuotaSummary } from '@/lib/apiQuota'
 
 export const runtime = 'nodejs'
 
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest) {
         driveFileId: '',
         driveFileUrl: '',
         driveFiles,
+        quotaSummary: [] as ApiQuotaSummary[],
         providerUsed: '',
         modelUsed: '',
         modeUsed: '',
@@ -65,7 +67,32 @@ export async function POST(req: NextRequest) {
     }
 
     const primaryDriveFile = driveFiles[0]
-    const ocr = await runOcr(validImages)
+    let quota: ApiQuotaTracker
+    try {
+      quota = await ApiQuotaTracker.create()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('API quota sheet setup failed:', error)
+
+      return NextResponse.json({
+        success: true,
+        imageSaved: true,
+        scanFailed: true,
+        driveFileId: primaryDriveFile.driveFileId,
+        driveFileUrl: primaryDriveFile.driveFileUrl,
+        driveFiles,
+        quotaSummary: [] as ApiQuotaSummary[],
+        providerUsed: '',
+        modelUsed: '',
+        modeUsed: '',
+        ocrText: '',
+        data: emptyCardData,
+        errors: [`API quota setup failed: ${message}`],
+        error: message,
+      }, { status: 500 })
+    }
+
+    const ocr = await runOcr(validImages, quota)
     const errors = [...ocr.errors]
     const ocrUsable = isUsableOcrText(ocr.text)
 
@@ -74,10 +101,12 @@ export async function POST(req: NextRequest) {
         mode: 'ocr-text-cleanup',
         ocrText: ocr.text,
         images: validImages,
+        quota,
       })
       errors.push(...cleanup.errors)
 
       if (cleanup.success) {
+        const quotaSummary = await quota.getSummary()
         return NextResponse.json({
           success: true,
           imageSaved: true,
@@ -85,6 +114,7 @@ export async function POST(req: NextRequest) {
           driveFileId: primaryDriveFile.driveFileId,
           driveFileUrl: primaryDriveFile.driveFileUrl,
           driveFiles,
+          quotaSummary,
           providerUsed: cleanup.providerUsed,
           modelUsed: cleanup.modelUsed,
           modeUsed: cleanup.modeUsed,
@@ -98,10 +128,12 @@ export async function POST(req: NextRequest) {
     const vision = await runAiFailover({
       mode: 'vision',
       images: validImages,
+      quota,
     })
     errors.push(...vision.errors)
 
     if (vision.success) {
+      const quotaSummary = await quota.getSummary()
       return NextResponse.json({
         success: true,
         imageSaved: true,
@@ -109,6 +141,7 @@ export async function POST(req: NextRequest) {
         driveFileId: primaryDriveFile.driveFileId,
         driveFileUrl: primaryDriveFile.driveFileUrl,
         driveFiles,
+        quotaSummary,
         providerUsed: vision.providerUsed,
         modelUsed: vision.modelUsed,
         modeUsed: vision.modeUsed,
@@ -118,6 +151,7 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    const quotaSummary = await quota.getSummary()
     return NextResponse.json({
       success: true,
       imageSaved: true,
@@ -125,6 +159,7 @@ export async function POST(req: NextRequest) {
       driveFileId: primaryDriveFile.driveFileId,
       driveFileUrl: primaryDriveFile.driveFileUrl,
       driveFiles,
+      quotaSummary,
       providerUsed: '',
       modelUsed: '',
       modeUsed: '',

@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { logScanAttempt, type ScanAttemptLog } from './scanLogger'
 import type { ScanImageInput } from './ocrFallback'
+import type { ApiQuotaTracker } from './apiQuota'
 
 export type BusinessCardData = {
   name: string
@@ -67,11 +68,13 @@ const providerKeys = () => [
   ...[1, 2, 3].map(index => ({
     provider: 'groq' as const,
     keyIndex: index,
+    envKey: `GROQ_API_KEY_${index}`,
     apiKey: process.env[`GROQ_API_KEY_${index}`],
   })),
   ...[1, 2, 3].map(index => ({
     provider: 'gemini' as const,
     keyIndex: index,
+    envKey: `GOOGLE_AI_API_KEY_${index}`,
     apiKey: process.env[`GOOGLE_AI_API_KEY_${index}`],
   })),
 ]
@@ -221,10 +224,12 @@ export const runAiFailover = async ({
   mode,
   ocrText,
   images,
+  quota,
 }: {
   mode: AiScanMode
   ocrText?: string
   images: ScanImageInput[]
+  quota?: ApiQuotaTracker
 }): Promise<AiScanSuccess | AiScanFailure> => {
   const attempts: ScanAttemptLog[] = []
   const errors: string[] = []
@@ -244,6 +249,15 @@ export const runAiFailover = async ({
       let status = 0
 
       try {
+        if (quota) {
+          const quotaCheck = await quota.canUse(key.envKey)
+          if (!quotaCheck.allowed) {
+            errors.push(`${key.provider}-${key.keyIndex} skipped: ${quotaCheck.reason}`)
+            break
+          }
+          await quota.incrementUsed(key.envKey)
+        }
+
         const text = await withTimeout(
           key.provider === 'groq'
             ? mode === 'vision'
@@ -263,6 +277,7 @@ export const runAiFailover = async ({
           startedAt,
           status: 'success',
         }))
+        if (quota) await quota.recordResult(key.envKey)
 
         return {
           success: true,
@@ -275,6 +290,7 @@ export const runAiFailover = async ({
         }
       } catch (error) {
         status = getStatus(error)
+        if (quota) await quota.recordResult(key.envKey, error)
         attempts.push(logScanAttempt({
           provider: key.provider,
           keyIndex: key.keyIndex,
@@ -294,4 +310,3 @@ export const runAiFailover = async ({
 
   return { success: false, attempts, errors }
 }
-

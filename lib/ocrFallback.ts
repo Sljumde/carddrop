@@ -1,4 +1,5 @@
 import { logScanAttempt, type ScanAttemptLog } from './scanLogger'
+import type { ApiQuotaTracker } from './apiQuota'
 
 export type ScanImageInput = {
   imageBase64: string
@@ -44,7 +45,7 @@ export const isUsableOcrText = (text: string) => {
   )
 }
 
-export const runOcr = async (images: ScanImageInput[]): Promise<OcrResult> => {
+export const runOcr = async (images: ScanImageInput[], quota?: ApiQuotaTracker): Promise<OcrResult> => {
   const apiKey = process.env.OCR_API_KEY_1
   const attempts: ScanAttemptLog[] = []
   const errors: string[] = []
@@ -60,11 +61,21 @@ export const runOcr = async (images: ScanImageInput[]): Promise<OcrResult> => {
     const image = images[index]
     let lastError: unknown
 
+    if (quota) {
+      const quotaCheck = await quota.canUse('OCR_API_KEY_1')
+      if (!quotaCheck.allowed) {
+        errors.push(`OCR 1 skipped: ${quotaCheck.reason}`)
+        break
+      }
+    }
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       const startedAt = Date.now()
       let status = 0
 
       try {
+        if (quota) await quota.incrementUsed('OCR_API_KEY_1')
+
         const form = new FormData()
         form.append('apikey', apiKey)
         form.append('base64Image', `data:${image.mimeType || 'image/jpeg'};base64,${image.imageBase64}`)
@@ -97,12 +108,14 @@ export const runOcr = async (images: ScanImageInput[]): Promise<OcrResult> => {
           startedAt,
           status: `success:${status}`,
         }))
+        if (quota) await quota.recordResult('OCR_API_KEY_1')
 
         if (parsedText.trim()) texts.push(`[${image.side || `image-${index + 1}`}]\n${parsedText.trim()}`)
         lastError = undefined
         break
       } catch (error) {
         lastError = error
+        if (quota) await quota.recordResult('OCR_API_KEY_1', error)
         attempts.push(logScanAttempt({
           provider: 'ocr.space',
           keyIndex: 1,

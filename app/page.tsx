@@ -13,6 +13,16 @@ type CardData = {
   website: string
 }
 
+type QuotaSummary = {
+  provider: string
+  keyNo: number
+  envKey: string
+  dailyCap: number
+  usedToday: number
+  remaining: number
+  status: string
+}
+
 type Stage = 'capture' | 'scanning' | 'review' | 'submitting' | 'done' | 'error'
 type CardSide = 'front' | 'back'
 
@@ -33,6 +43,7 @@ export default function Home() {
   const [submitterOptions, setSubmitterOptions] = useState<string[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [scanTime, setScanTime] = useState(0)
+  const [quotaSummary, setQuotaSummary] = useState<QuotaSummary[]>([])
   const [isCameraOpen, setIsCameraOpen] = useState(false)
   const [cameraError, setCameraError] = useState('')
 
@@ -197,6 +208,7 @@ export default function Home() {
         body: JSON.stringify({ images }),
       })
       const json = await res.json()
+      setQuotaSummary(json.quotaSummary || [])
       if (!res.ok || !json.success) throw new Error(json.error || 'Scan failed')
       setScanTime(Math.round((Date.now() - start) / 1000))
       setCardData(json.data)
@@ -236,12 +248,28 @@ export default function Home() {
     setRemarks('')
     setSubmittedBy('')
     setErrorMsg('')
+    setQuotaSummary([])
     if (fileInputRef.current) fileInputRef.current.value = ''
     if (cameraInputRef.current) cameraInputRef.current.value = ''
   }
 
   const updateField = (field: keyof CardData, value: string) => {
     setCardData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const renderQuotaPanel = () => {
+    if (quotaSummary.length === 0) return null
+
+    return (
+      <div className={styles.quotaPanel}>
+        {quotaSummary.map(item => (
+          <div key={item.envKey} className={styles.quotaItem}>
+            <span>{item.provider} {item.keyNo}</span>
+            <strong>{item.remaining} left</strong>
+          </div>
+        ))}
+      </div>
+    )
   }
 
   return (
@@ -458,6 +486,7 @@ export default function Home() {
                 Save to Sheet
               </button>
             </div>
+            {renderQuotaPanel()}
           </div>
         )}
 
@@ -496,6 +525,7 @@ export default function Home() {
               <div className={styles.errorIcon}>!</div>
               <p className={styles.errorTitle}>Something went wrong</p>
               <p className={styles.errorMsg}>{errorMsg}</p>
+              {renderQuotaPanel()}
               <button className={styles.btnPrimary} onClick={handleReset}>
                 Try Again
               </button>
