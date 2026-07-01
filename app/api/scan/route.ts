@@ -1,74 +1,140 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { runAiFailover, type BusinessCardData } from '@/lib/aiProviders'
+import { uploadCardImageToDrive, type DriveUploadResult } from '@/lib/googleDrive'
+import { isUsableOcrText, runOcr, type ScanImageInput } from '@/lib/ocrFallback'
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
+export const runtime = 'nodejs'
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+const emptyCardData: BusinessCardData = {
+  name: '',
+  email: '',
+  phone: '',
+  company: '',
+  designation: '',
+  website: '',
+}
+
+const normalizeImages = (body: any): ScanImageInput[] => {
+  const scanImages = Array.isArray(body.images) && body.images.length > 0
+    ? body.images
+    : [{ imageBase64: body.imageBase64, mimeType: body.mimeType, side: 'front' }]
+
+  return scanImages
+    .filter((image: any) => image?.imageBase64)
+    .map((image: any, index: number) => ({
+      imageBase64: String(image.imageBase64),
+      mimeType: image.mimeType || 'image/jpeg',
+      side: image.side || (index === 0 ? 'front' : `image-${index + 1}`),
+    }))
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageBase64, mimeType, images } = await req.json()
-    const scanImages = Array.isArray(images) && images.length > 0
-      ? images
-      : [{ imageBase64, mimeType }]
-
-    const validImages = scanImages.filter((image: any) => image?.imageBase64)
+    const body = await req.json()
+    const validImages = normalizeImages(body)
 
     if (validImages.length === 0) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' })
+    const driveFiles: DriveUploadResult[] = []
+    try {
+      for (let index = 0; index < validImages.length; index++) {
+        const image = validImages[index]
+        driveFiles.push(await uploadCardImageToDrive({ ...image, index }))
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error('Apps Script image upload failed:', error)
 
-    const prompt = `You are a business card scanner. You may receive one or two images for the same card: front side first, optional back side second. Extract the following fields by combining details from all provided images and return ONLY a valid JSON object with no extra text, no markdown, no explanation.
+      return NextResponse.json({
+        success: false,
+        imageSaved: false,
+        scanFailed: true,
+        driveFileId: '',
+        driveFileUrl: '',
+        driveFiles,
+        providerUsed: '',
+        modelUsed: '',
+        modeUsed: '',
+        ocrText: '',
+        data: emptyCardData,
+        errors: [message],
+        error: message,
+      }, { status: 502 })
+    }
 
-Fields to extract:
-- name (full name of the person)
-- email (email address, empty string if not found)
-- phone (phone number(s), comma separated if multiple, empty string if not found)
-- company (company or organization name, empty string if not found)
-- designation (job title or role, empty string if not found)
-- website (website URL, empty string if not found)
+    const primaryDriveFile = driveFiles[0]
+    const ocr = await runOcr(validImages)
+    const errors = [...ocr.errors]
+    const ocrUsable = isUsableOcrText(ocr.text)
 
-Return format (JSON only, nothing else):
-{"name":"","email":"","phone":"","company":"","designation":"","website":""}`
+    if (ocrUsable) {
+      const cleanup = await runAiFailover({
+        mode: 'ocr-text-cleanup',
+        ocrText: ocr.text,
+        images: validImages,
+      })
+      errors.push(...cleanup.errors)
 
-    // Retry up to 3 times on 503
-    let lastError: any
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const result = await model.generateContent([
-          prompt,
-          ...validImages.map((image: any) => ({
-            inlineData: {
-              data: image.imageBase64,
-              mimeType: image.mimeType || 'image/jpeg',
-            },
-          })),
-        ])
-
-        const text = result.response.text().trim()
-        let cleaned = text.replace(/```json|```/g, '').trim()
-        const jsonMatch = cleaned.match(/\{[\s\S]*\}/)
-        if (!jsonMatch) throw new Error('Could not extract JSON from Gemini response')
-        const parsed = JSON.parse(jsonMatch[0])
-        return NextResponse.json({ success: true, data: parsed })
-
-      } catch (err: any) {
-        lastError = err
-        const is503 = err.message?.includes('503') || err.message?.includes('Service Unavailable')
-        if (is503 && attempt < 3) {
-          await sleep(attempt * 1500) // 1.5s, then 3s
-          continue
-        }
-        throw err
+      if (cleanup.success) {
+        return NextResponse.json({
+          success: true,
+          imageSaved: true,
+          scanFailed: false,
+          driveFileId: primaryDriveFile.driveFileId,
+          driveFileUrl: primaryDriveFile.driveFileUrl,
+          driveFiles,
+          providerUsed: cleanup.providerUsed,
+          modelUsed: cleanup.modelUsed,
+          modeUsed: cleanup.modeUsed,
+          ocrText: ocr.text,
+          data: cleanup.data,
+          errors,
+        })
       }
     }
 
-    throw lastError
+    const vision = await runAiFailover({
+      mode: 'vision',
+      images: validImages,
+    })
+    errors.push(...vision.errors)
+
+    if (vision.success) {
+      return NextResponse.json({
+        success: true,
+        imageSaved: true,
+        scanFailed: false,
+        driveFileId: primaryDriveFile.driveFileId,
+        driveFileUrl: primaryDriveFile.driveFileUrl,
+        driveFiles,
+        providerUsed: vision.providerUsed,
+        modelUsed: vision.modelUsed,
+        modeUsed: vision.modeUsed,
+        ocrText: ocr.text,
+        data: vision.data,
+        errors,
+      })
+    }
+
+    return NextResponse.json({
+      success: true,
+      imageSaved: true,
+      scanFailed: true,
+      driveFileId: primaryDriveFile.driveFileId,
+      driveFileUrl: primaryDriveFile.driveFileUrl,
+      driveFiles,
+      providerUsed: '',
+      modelUsed: '',
+      modeUsed: '',
+      ocrText: ocr.text,
+      data: emptyCardData,
+      errors,
+    })
 
   } catch (err: any) {
-    console.error('Gemini scan error:', err)
+    console.error('Scan pipeline error:', err)
     return NextResponse.json({ error: err.message || 'Scan failed' }, { status: 500 })
   }
 }
