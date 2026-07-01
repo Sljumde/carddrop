@@ -1,3 +1,6 @@
+import { Readable } from 'stream'
+import { google } from 'googleapis'
+
 export type DriveUploadResult = {
   driveFileId: string
   driveFileUrl: string
@@ -46,19 +49,91 @@ const buildFileName = (mimeType: string, side = 'card', index = 0) => {
   return `card_scan_${timestamp}${suffix}.${extensionForMime(mimeType)}`
 }
 
-export const uploadCardImageToDrive = async ({
+const getServiceAccountCredentials = () => {
+  const rawJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+
+  if (rawJson) {
+    return JSON.parse(rawJson.replace(/\n/g, '\\n'))
+  }
+
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
+
+  if (clientEmail && privateKey) {
+    return {
+      client_email: clientEmail,
+      private_key: privateKey,
+    }
+  }
+
+  return null
+}
+
+const uploadWithDriveApi = async ({
   imageBase64,
-  mimeType = 'image/jpeg',
-  side = 'card',
-  index = 0,
-}: UploadCardImageInput): Promise<DriveUploadResult> => {
+  mimeType,
+  name,
+}: {
+  imageBase64: string
+  mimeType: string
+  name: string
+}): Promise<DriveUploadResult> => {
+  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID
+  const credentials = getServiceAccountCredentials()
+
+  if (!folderId || !credentials) {
+    throw new Error('Google Drive upload is not configured')
+  }
+
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/drive.file'],
+  })
+  const drive = google.drive({ version: 'v3', auth })
+  const buffer = Buffer.from(imageBase64, 'base64')
+
+  const result = await drive.files.create({
+    requestBody: {
+      name,
+      parents: [folderId],
+    },
+    media: {
+      mimeType,
+      body: Readable.from([buffer]),
+    },
+    fields: 'id,webViewLink',
+    supportsAllDrives: true,
+  })
+
+  const fileId = result.data.id
+  const fileUrl = result.data.webViewLink || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '')
+
+  if (!fileId || !fileUrl) {
+    throw new Error('Google Drive upload did not return fileId and fileUrl')
+  }
+
+  return {
+    driveFileId: fileId,
+    driveFileUrl: fileUrl,
+    name,
+  }
+}
+
+const uploadWithAppsScript = async ({
+  imageBase64,
+  mimeType,
+  name,
+}: {
+  imageBase64: string
+  mimeType: string
+  name: string
+}): Promise<DriveUploadResult> => {
   const uploadUrl = process.env.APPS_SCRIPT_UPLOAD_URL
   const secret = process.env.APPS_SCRIPT_UPLOAD_SECRET
 
   if (!uploadUrl) throw new Error('APPS_SCRIPT_UPLOAD_URL is not configured')
   if (!secret) throw new Error('APPS_SCRIPT_UPLOAD_SECRET is not configured')
 
-  const name = buildFileName(mimeType, side, index)
   const response = await withTimeout(fetch(uploadUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -85,4 +160,30 @@ export const uploadCardImageToDrive = async ({
     driveFileUrl: json.fileUrl,
     name,
   }
+}
+
+export const uploadCardImageToDrive = async ({
+  imageBase64,
+  mimeType = 'image/jpeg',
+  side = 'card',
+  index = 0,
+}: UploadCardImageInput): Promise<DriveUploadResult> => {
+  const name = buildFileName(mimeType, side, index)
+  const hasAppsScriptConfig = Boolean(
+    process.env.APPS_SCRIPT_UPLOAD_URL && process.env.APPS_SCRIPT_UPLOAD_SECRET
+  )
+  const hasDriveApiConfig = Boolean(
+    process.env.GOOGLE_DRIVE_FOLDER_ID
+      && (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY))
+  )
+
+  if (hasAppsScriptConfig) {
+    return uploadWithAppsScript({ imageBase64, mimeType, name })
+  }
+
+  if (hasDriveApiConfig) {
+    return uploadWithDriveApi({ imageBase64, mimeType, name })
+  }
+
+  return uploadWithAppsScript({ imageBase64, mimeType, name })
 }
